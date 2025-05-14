@@ -1,0 +1,401 @@
+:root {
+    --primary-bg: #1e1e1e;
+    --secondary-bg: #252526;
+    --tertiary-bg: #333333;
+    --text-primary: #e0e0e0;
+    --text-secondary: #b0b0b0;
+    --accent-color: #007bff;
+    --border-color: #444444;
+    --danger-color: #dc3545;
+    --font-body: 'Open Sans', sans-serif;
+    --font-heading: 'Montserrat', sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-body);
+    background-color: var(--primary-bg);
+    color: var(--text-primary);
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.app-layout {
+    display: grid;
+    grid-template-columns: 250px 300px 1fr; /* Kansiot, Videolista, Pääsisältö */
+    grid-template-rows: auto 1fr; /* Header ja sisältöalue */
+    grid-template-areas:
+        "header header header"
+        "folders library main";
+    flex-grow: 1;
+    gap: 1px; 
+    background-color: var(--border-color); 
+}
+
+.app-header {
+    grid-area: header;
+    background-color: var(--secondary-bg);
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.app-header h1 {
+    font-family: var(--font-heading);
+    font-size: 1.8em;
+    color: var(--text-primary);
+}
+
+.app-header .logo-icon {
+    margin-right: 10px;
+    font-size: 1.1em; /* Säädä tarvittaessa logon kokoa */
+}
+.app-header .slogan {
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    font-weight: normal;
+    margin-top: 2px;
+}
+
+.folders-panel,
+.library-panel {
+    background-color: var(--secondary-bg);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto;
+}
+.folders-panel { grid-area: folders; }
+.library-panel { grid-area: library; }
+
+
+.folders-panel h2,
+.library-panel h2 {
+    font-family: var(--font-heading);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+    margin-bottom: 5px;
+    font-size: 1.3em;
+}
+
+.add-folder-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.add-folder-section input[type="text"],
+.video-loader input[type="text"],
+.comment-controls input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    background-color: var(--tertiary-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: 4px;
+    font-family: var(--font-body);
+}
+
+.add-folder-section input[type="text"]::placeholder,
+.video-loader input[type="text"]::placeholder,
+.comment-controls input[type="text"]::placeholder {
+    color: var(--text-secondary);
+}
+
+.add-folder-section button,
+.video-loader button,
+.comment-controls button {
+    padding: 10px 15px;
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--font-heading);
+    transition: background-color 0.2s;
+}
+
+.add-folder-section button:hover,
+.video-loader button:hover,
+.comment-controls button:hover {
+    background-color: #0056b3;
+}
+
+.comment-controls button:disabled {
+    background-color: var(--tertiary-bg);
+    color: var(--text-secondary);
+    cursor: not-allowed;
+}
+
+
+#folder-list,
+#video-library-list {
+    list-style: none;
+    overflow-y: auto;
+    flex-grow: 1;
+}
+
+#folder-list li,
+#video-library-list li {
+    background-color: var(--tertiary-bg);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.2s, border-left-color 0.2s;
+    border-left: 3px solid transparent;
+}
+
+#folder-list li:hover,
+#video-library-list li:hover {
+    background-color: #404040;
+}
+
+#folder-list li.active-folder,
+#video-library-list li.active { /* Videolistalle 'active' */
+    background-color: #3a3a3a;
+    border-left-color: var(--accent-color);
+    font-weight: bold;
+}
+
+#folder-list .folder-name,
+#video-library-list .video-title {
+    flex-grow: 1;
+    margin-right: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#folder-list .delete-folder-btn,
+#video-library-list .delete-video-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1.1em;
+    padding: 2px 5px;
+    line-height: 1; /* Varmistaa ettei nappi ole liian korkea */
+}
+
+#folder-list .delete-folder-btn:hover,
+#video-library-list .delete-video-btn:hover {
+    color: var(--danger-color);
+}
+
+
+.main-content {
+    grid-area: main;
+    background-color: var(--primary-bg);
+    display: grid;
+    grid-template-columns: 2fr 1fr; /* Video ja kommentit */
+    gap: 1px;
+    overflow: hidden;
+}
+
+.video-section {
+    background-color: var(--secondary-bg);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+#player-container {
+    position: relative;
+    padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+    height: 0;
+    overflow: hidden;
+    background-color: #000;
+    border-radius: 4px;
+    width: 100%;
+    margin-bottom: 15px;
+}
+
+#player-container iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+#player-placeholder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 20px;
+    color: var(--text-secondary);
+    background-color: #000;
+    z-index: 5;
+    border-radius: 4px; /* Sama kuin player-container */
+}
+#player-placeholder.hidden {
+    display: none;
+}
+
+.comment-controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.comment-controls input[type="text"] {
+    flex-grow: 1;
+}
+
+.comments-section {
+    background-color: var(--secondary-bg);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.comments-section h2 {
+    font-family: var(--font-heading);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+    font-size: 1.3em;
+}
+
+#comments-list {
+    list-style: none;
+}
+
+#comments-list li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    display: flex;
+    align-items: flex-start;
+    transition: background-color 0.2s;
+}
+#comments-list li:last-child {
+    border-bottom: none;
+}
+
+#comments-list li:hover {
+    background-color: var(--tertiary-bg);
+}
+
+#comments-list li .timestamp {
+    font-weight: bold;
+    color: var(--accent-color);
+    margin-right: 12px;
+    min-width: 55px;
+    font-size: 0.9em;
+}
+
+#comments-list li .text {
+    flex-grow: 1;
+    font-size: 0.95em;
+    word-break: break-word;
+}
+
+#video-library-list li .video-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 5px; /* Pieni väli otsikkoon */
+}
+
+#video-library-list li .video-actions select {
+    background-color: var(--tertiary-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 0.85em;
+    max-width: 100px; /* Säädä tarvittaessa */
+    cursor: pointer;
+}
+#video-library-list li .video-actions select:hover {
+    border-color: var(--accent-color);
+}
+
+/* Responsiivisuus */
+@media (max-width: 1200px) {
+    .app-layout {
+        grid-template-columns: 220px 260px 1fr;
+    }
+}
+
+@media (max-width: 992px) { /* Tabletit ja pienemmät */
+    .app-layout {
+        grid-template-columns: 1fr; /* Kaikki allekkain */
+        grid-template-rows: auto auto auto auto; /* Header, Kansiot, Videot, Main */
+        grid-template-areas:
+            "header"
+            "folders"
+            "library"
+            "main";
+        gap: 1px; /* Pidetään ohuet viivat */
+        background-color: var(--primary-bg);
+    }
+    .folders-panel, .library-panel, .main-content {
+        border-top: 1px solid var(--border-color);
+        overflow-y: visible;
+        max-height: none; /* Poistetaan aiemmat mahdolliset rajoitukset */
+    }
+    .main-content {
+        /* Jos main-contentilla oli sisäinen grid video-osalle ja kommenteille */
+        grid-template-columns: 1fr; /* Video ja kommentit allekkain tabletissa */
+        grid-template-rows: auto auto; /* Soitin ensin, sitten kommentit */
+        min-height: 70vh; /* Varmista, että pääsisällöllä on korkeutta */
+    }
+    .video-section {
+       padding: 15px; /* Hieman vähemmän paddingia */
+    }
+    .comments-section {
+        padding: 15px;
+        max-height: 40vh; /* Rajoita kommenttien korkeutta, jotta soitin näkyy */
+        overflow-y: auto;
+    }
+     .folders-panel, .library-panel {
+        max-height: 35vh; /* Rajoita kansioiden ja videolistan korkeutta */
+    }
+}
+
+@media (max-width: 768px) { /* Puhelimet */
+    .app-header h1 {
+        font-size: 1.5em;
+    }
+    .app-header .slogan {
+        font-size: 0.8em;
+    }
+    .folders-panel h2,
+    .library-panel h2,
+    .comments-section h2 {
+        font-size: 1.15em;
+    }
+    .folders-panel, .library-panel, .comments-section {
+        padding: 15px;
+    }
+    #player-container {
+        margin-bottom: 10px;
+    }
+    .comment-controls {
+        flex-direction: column; /* Kommenttikenttä ja nappi allekkain */
+    }
+    .comment-controls input[type="text"] {
+        margin-bottom: 8px;
+    }
+}
