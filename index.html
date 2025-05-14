@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tagnote - Muistiinpanot oikeaan aikaan</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&family=Open+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <header class="app-header">
+            <h1><span class="logo-icon">📝</span> Tagnote</h1>
+            <p class="slogan">Muistiinpanot oikeaan aikaan.</p>
+        </header>
+
+        <aside class="folders-panel">
+            <h2>Kansiot</h2>
+            <div class="add-folder-section">
+                <input type="text" id="new-folder-name" placeholder="Uuden kansion nimi...">
+                <button id="add-folder-btn">Luo Kansio</button>
+            </div>
+            <ul id="folder-list">
+                <!-- Kansiot listataan tähän -->
+                <!-- Esimerkki:
+                <li data-folder-id="folder_123" class="active-folder">
+                    <span class="folder-name">Koripallo</span>
+                    <button class="delete-folder-btn" title="Poista kansio">×</button>
+                </li>
+                <li data-folder-id="root">
+                    <span class="folder-name">Pääkansio (ei kansiossa)</span>
+                </li>
+                 -->
+            </ul>
+        </aside>
+
+        <aside class="library-panel"> <!-- Entinen library-panel, nyt videolista -->
+            <h2 id="video-list-header">Videot</h2>
+            <div class="video-loader">
+                <input type="text" id="youtube-url" placeholder="Liitä YouTube video URL...">
+                <button id="load-video-btn">Lataa Uusi Video</button>
+            </div>
+            <ul id="video-library-list">
+                <!-- Tallennetut videot listataan tähän -->
+            </ul>
+        </aside>
+
+        <main class="main-content">
+            <div class="video-section">
+                <div id="player-container">
+                    <div id="player"></div>
+                    <div id="player-placeholder">
+                        <p>Lataa video tai valitse video listasta.</p>
+                    </div>
+                </div>
+                <div class="comment-controls">
+                    <input type="text" id="comment-text" placeholder="Lisää kommentti..." disabled>
+                    <button id="add-comment-btn" disabled>Lisää Kommentti</button>
+                </div>
+            </div>
+
+            <div class="comments-section">
+                <h2 id="comments-header">Kommentit</h2>
+                <ul id="comments-list">
+                    <!-- Kommentit listataan tähän -->
+                </ul>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+    <!-- YouTube IFrame API ladataan asynkronisesti JavaScriptillä -->
+</body>
+</html>
