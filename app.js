@@ -11,7 +11,13 @@ let library = {
 let currentVideoId = null;
 let currentFolderId = 'root'; // Oletuksena 'root'
 
-const LOCAL_STORAGE_KEY = 'tagnote_library_v3'; // Päivitetty avain vianmääritystä varten, jos vanha data aiheuttaa ongelmia
+const LOCAL_STORAGE_KEY = 'tagnote_library_v3';
+
+// UUSI LIPPU API:n valmiudelle
+let youtubeApiReady = false;
+// JONO SOITTIMEN LUONTIPYYNNÖILLE (jos yritetään luoda ennen API:n valmiutta)
+let playerInitializationQueue = [];
+
 
 // --- DOM-ELEMENTIT ---
 const urlInput = document.getElementById('youtube-url');
@@ -33,7 +39,7 @@ const videoListHeader = document.getElementById('video-list-header');
 document.addEventListener('DOMContentLoaded', initApp);
 
 function initApp() {
-    loadYouTubeAPI();
+    loadYouTubeAPI(); // Aloita API:n lataus
     loadLibraryFromLocal();
     
     currentFolderId = library.settings.lastOpenedFolderId || 'root';
@@ -41,8 +47,13 @@ function initApp() {
     renderFolderList();
     renderVideoLibraryList();
     
-    if (library.settings.activeVideoId && library.videos[library.settings.activeVideoId]) {
-        selectVideoFromLibrary(library.settings.activeVideoId);
+    const initialVideoId = library.settings.activeVideoId;
+    if (initialVideoId && library.videos[initialVideoId]) {
+        if (youtubeApiReady) {
+            selectVideoFromLibrary(initialVideoId);
+        } else {
+            playerInitializationQueue.push(() => selectVideoFromLibrary(initialVideoId));
+        }
     } else {
          playerPlaceholder.classList.remove('hidden');
     }
@@ -52,7 +63,6 @@ function initApp() {
     loadVideoBtn.addEventListener('click', handleLoadNewUrlVideo);
     addCommentBtn.addEventListener('click', handleAddComment);
     commentsListUL.addEventListener('click', handleCommentListClick);
-    
     addFolderBtn.addEventListener('click', handleAddFolder);
     folderListUL.addEventListener('click', handleFolderListClick);
     videoLibraryListUL.addEventListener('click', handleVideoLibraryClick);
@@ -67,7 +77,16 @@ function loadYouTubeAPI() {
 
 window.onYouTubeIframeAPIReady = function() {
     console.log("YouTube IFrame API on valmis.");
+    youtubeApiReady = true;
+    processPlayerInitializationQueue();
 };
+
+function processPlayerInitializationQueue() {
+    while (playerInitializationQueue.length > 0) {
+        const initFunction = playerInitializationQueue.shift();
+        initFunction();
+    }
+}
 
 // --- UUID Generaattori ---
 function generateUUID() {
@@ -125,7 +144,7 @@ function selectFolder(folderId) {
     renderFolderList();
     renderVideoLibraryList();
     updateVideoListHeader();
-    updateUIBasedOnState(); // Varmista, että esim. soitin tyhjennetään, jos kansiossa ei ole aktiivista videota
+    updateUIBasedOnState();
 }
 
 function handleDeleteFolder(folderIdToDelete) {
@@ -142,12 +161,14 @@ function handleDeleteFolder(folderIdToDelete) {
         library.folders = library.folders.filter(f => f.id !== folderIdToDelete);
         
         if (currentFolderId === folderIdToDelete) {
-            selectFolder('root'); // Valitse pääkansio, tämä hoitaa tilapäivitykset
+            selectFolder('root');
         } else {
-            // Jos poistettu kansio ei ollut aktiivinen, renderöi vain kansiolista uudelleen
-             renderFolderList();
+             renderFolderList(); // Vain kansiolista tarvitsee päivityksen jos poistettu ei ollut aktiivinen
         }
         saveLibraryToLocal();
+        // renderVideoLibraryList() kutsutaan selectFolderin kautta tai jos kansio ei ollut aktiivinen,
+        // niin sen videolista ei muutu. Pääkansion videolista voi muuttua, joten se pitää päivittää,
+        // jos aktiivinen kansio on 'root'. selectFolder('root') hoitaa tämän.
     }
 }
 
@@ -209,23 +230,49 @@ function handleLoadNewUrlVideo() {
     }
     urlInput.value = '';
     
-    if (library.videos[videoId]) {
-        selectVideoFromLibrary(videoId);
-        const videoFolder = library.videos[videoId].folderId || 'root';
-        if (videoFolder !== currentFolderId) {
-            selectFolder(videoFolder); // Tämä renderöi myös videolistan uudelleen
+    const loadAction = () => {
+        if (library.videos[videoId]) {
+            selectVideoFromLibrary(videoId); // Tämä hoitaa myös kansion vaihdon tarvittaessa
+        } else {
+            loadVideoIntoPlayer(videoId); // onPlayerReadyInternal hoitaa lisäyksen kirjastoon
         }
+    };
+
+    if (youtubeApiReady) {
+        loadAction();
     } else {
-        // Ladataan uusi video. `onPlayerReady` hoitaa sen lisäämisen kirjastoon.
-        loadVideoIntoPlayer(videoId);
+        playerInitializationQueue.push(loadAction);
     }
 }
 
 function loadVideoIntoPlayer(videoId) {
+    if (!youtubeApiReady) {
+        console.warn("YT API not ready, queuing loadVideoIntoPlayer for", videoId);
+        playerInitializationQueue.push(() => loadVideoIntoPlayer(videoId));
+        return;
+    }
+
     playerPlaceholder.classList.add('hidden');
     if (player) {
-        player.cueVideoById(videoId);
+        if (typeof player.cueVideoById === 'function') {
+            player.cueVideoById(videoId);
+        } else {
+            console.error("Player object exists, but cueVideoById is not a function. Re-initializing player.");
+            destroyPlayer();
+            createPlayer(videoId);
+        }
     } else {
+        createPlayer(videoId);
+    }
+}
+
+function createPlayer(videoId) {
+    if (!youtubeApiReady) {
+        console.error("Attempted to create player when YT API not ready. This should not happen.");
+        playerInitializationQueue.push(() => createPlayer(videoId));
+        return;
+    }
+    try {
         player = new YT.Player(playerDivId, {
             height: '100%',
             width: '100%',
@@ -233,12 +280,31 @@ function loadVideoIntoPlayer(videoId) {
             playerVars: { 'playsinline': 1, 'modestbranding': 1, 'rel': 0 },
             events: { 'onReady': onPlayerReadyInternal }
         });
+    } catch (e) {
+        console.error("Error creating YT.Player:", e);
     }
 }
-// Nimetään uudelleen, jotta ei sekoitu globaaliin onYouTubeIframeAPIReady
+
+function destroyPlayer() {
+    if (player && typeof player.destroy === 'function') {
+        try {
+            player.destroy();
+        } catch (e) {
+            console.error("Error destroying player instance:", e);
+        }
+    }
+    player = null;
+    const playerElement = document.getElementById(playerDivId);
+    if (playerElement) {
+        playerElement.innerHTML = ''; // Varmista, että iframe poistuu
+    }
+}
+
 function onPlayerReadyInternal(event) {
-    console.log("Player ready internal for video event");
-    const videoData = player.getVideoData();
+    console.log("Player ready internal for video event on video ID:", event.target.getVideoData().video_id);
+    // Soitin on event.target, koska globaali 'player' ei välttämättä ole vielä päivittynyt tähän instanssiin
+    const newPlayerInstance = event.target;
+    const videoData = newPlayerInstance.getVideoData();
     const videoIdFromPlayer = videoData.video_id;
     const videoTitle = videoData.title || "Nimetön Video";
 
@@ -254,40 +320,62 @@ function onPlayerReadyInternal(event) {
             addedDate: new Date().toISOString()
         };
         library.videos[currentVideoId] = videoEntry;
+        console.log(`Added new video to library: ${videoTitle} (ID: ${currentVideoId}) in folder: ${currentFolderId}`);
     } else {
         if (!videoEntry.title || videoEntry.title === "Nimetön Video") {
             videoEntry.title = videoTitle;
+            console.log(`Updated title for video ID ${currentVideoId} to: ${videoTitle}`);
         }
-        // Jos video ladataan uudelleen, varmista että sen folderId on oikein
-        // (jos se oli jo kirjastossa ja käyttäjä vaihtoi kansiota ennen latausta)
-        // Tämän pitäisi olla ok, koska handleLoadNewUrlVideo ja selectVideoFromLibrary hoitavat kansion valinnan.
+        // Varmistetaan, että videon folderId on oikein, jos se ladataan uudelleen URL:sta
+        // ja se on jo kirjastossa mutta käyttäjä on eri kansiossa.
+        // Tämä on tärkeää, jos video ladataan URL:sta eikä valita kirjastosta.
+        const expectedFolderId = (currentFolderId !== 'root' ? currentFolderId : null);
+        if (videoEntry.folderId !== expectedFolderId && !library.folders.find(f => f.id === videoEntry.folderId) && videoEntry.folderId !== null) {
+            // Jos videon folderId on virheellinen (kansiota ei enää ole), tai se on eri kuin nykyinen aktiivinen kansio
+            // ja video ladattiin URL:sta (ei valittu kirjastosta, jolloin kansio olisi jo vaihdettu).
+            // Tässä tapauksessa video "siirretään" nykyiseen kansioon.
+            console.log(`Video ${currentVideoId} was in folder ${videoEntry.folderId}, but current folder is ${currentFolderId}. Moving to current folder.`);
+            videoEntry.folderId = expectedFolderId;
+        }
     }
     
     library.settings.activeVideoId = currentVideoId;
     saveLibraryToLocal();
-    renderVideoLibraryList(); // Varmista, että lista päivittyy oikein
-    updateUIBasedOnState(); // Kattaa kommenttikentät, otsikot jne.
+    renderVideoLibraryList();
+    updateUIBasedOnState();
 }
 
 function selectVideoFromLibrary(videoIdToSelect) {
     const videoData = library.videos[videoIdToSelect];
-    if (!videoData) return;
-
-    currentVideoId = videoIdToSelect;
-    library.settings.activeVideoId = currentVideoId;
-
-    const targetFolderId = videoData.folderId || 'root';
-    if (targetFolderId !== currentFolderId) {
-        selectFolder(targetFolderId); // Tämä renderöi myös videolistan
-    } else {
-        // Jos kansio on sama, päivitä vain videolistan korostus ja UI
-        updateActiveVideoInLibraryList(currentVideoId);
+    if (!videoData) {
+        console.warn(`Video with ID ${videoIdToSelect} not found in library.`);
+        return;
     }
+
+    const selectAction = () => {
+        currentVideoId = videoIdToSelect;
+        library.settings.activeVideoId = currentVideoId;
+
+        const targetFolderId = videoData.folderId || 'root';
+        if (targetFolderId !== currentFolderId) {
+            selectFolder(targetFolderId); // Tämä hoitaa UI-päivitykset ja videolistan renderöinnin
+        } else {
+            // Jos kansio on sama, varmista vain, että videolistan korostus on oikein
+             updateActiveVideoInLibraryList(currentVideoId);
+        }
+        
+        loadVideoIntoPlayer(videoIdToSelect); // Lataa video soittimeen
+        saveLibraryToLocal(); // Tallenna aktiivisen videon muutos
+        updateUIBasedOnState(); // Päivitä kommentit, otsikot jne.
+    };
     
-    loadVideoIntoPlayer(videoIdToSelect);
-    saveLibraryToLocal();
-    updateUIBasedOnState(); // Tämä hoitaa kommentit, otsikot jne.
+    if (youtubeApiReady) {
+        selectAction();
+    } else {
+        playerInitializationQueue.push(selectAction);
+    }
 }
+
 
 function handleVideoLibraryClick(event) {
     const target = event.target;
@@ -298,15 +386,13 @@ function handleVideoLibraryClick(event) {
         const videoId = target.closest('li[data-video-id]').dataset.videoId;
         if (videoId) handleRemoveVideo(videoId);
     } else if (target.tagName === 'SELECT' && target.closest('.video-actions')) {
-        // Estä videon valinta, kun klikataan select-elementtiä
         event.stopPropagation();
     } else if (videoLi) {
         const videoId = videoLi.dataset.videoId;
-        if (videoId && videoId !== currentVideoId) {
+        if (videoId && videoId !== currentVideoId) { // Vain jos eri video valitaan
             selectVideoFromLibrary(videoId);
         } else if (videoId === currentVideoId && player && typeof player.playVideo === 'function') {
-            // Jos sama video klikataan uudelleen, voisi esim. toistaa/pausettaa
-            // player.playVideo(); // Tai jokin muu toiminto
+            // Jos sama video klikataan, ei tehdä mitään erityistä (tai voisi play/pause)
         }
     }
 }
@@ -321,18 +407,11 @@ function handleRemoveVideo(videoIdToRemove) {
         if (currentVideoId === videoIdToRemove) {
             currentVideoId = null;
             library.settings.activeVideoId = null;
-            if (player) {
-                try {
-                    player.stopVideo(); // Pysäytä video ennen tuhoamista
-                    player.destroy();
-                } catch (e) { console.error("Error destroying player:", e); }
-                player = null;
-                document.getElementById(playerDivId).innerHTML = '';
-            }
+            destroyPlayer();
         }
         saveLibraryToLocal();
-        renderVideoLibraryList();
-        updateUIBasedOnState();
+        renderVideoLibraryList(); // Päivitä videolista nykyisessä kansiossa
+        updateUIBasedOnState();   // Päivitä koko UI:n tila
     }
 }
 
@@ -363,21 +442,21 @@ function renderVideoLibraryList() {
             li.appendChild(titleSpan);
 
             const actionsContainer = document.createElement('div');
-            actionsContainer.className = 'video-actions';
+actionsContainer.className = 'video-actions';
 
             const selectMove = document.createElement('select');
             selectMove.title = "Siirrä video toiseen kansioon";
-            selectMove.dataset.videoId = videoData.id;
+            selectMove.dataset.videoId = videoData.id; // Tärkeä handleMoveVideolle
             selectMove.addEventListener('change', handleMoveVideo);
 
             const defaultOpt = document.createElement('option');
             defaultOpt.textContent = "Siirrä...";
-            defaultOpt.value = "";
+            defaultOpt.value = ""; // Tyhjä arvo, jotta change-event ei laukea turhaan
             defaultOpt.disabled = true;
             defaultOpt.selected = true;
             selectMove.appendChild(defaultOpt);
 
-            if (videoData.folderId !== null) {
+            if (videoData.folderId !== null) { // Jos video ei ole jo pääkansiossa
                 const rootOpt = document.createElement('option');
                 rootOpt.value = 'root';
                 rootOpt.textContent = 'Pääkansioon';
@@ -385,15 +464,15 @@ function renderVideoLibraryList() {
             }
             
             library.folders.forEach(folder => {
-                if (folder.id !== videoData.folderId) {
+                if (folder.id !== videoData.folderId) { // Älä näytä nykyistä kansiota vaihtoehtona
                     const opt = document.createElement('option');
                     opt.value = folder.id;
                     opt.textContent = folder.name;
                     selectMove.appendChild(opt);
                 }
             });
-            // Näytä select vain jos on siirtovaihtoehtoja
-            if (selectMove.options.length > 1) {
+            
+            if (selectMove.options.length > 1) { // Näytä select vain jos on siirtovaihtoehtoja
                  actionsContainer.appendChild(selectMove);
             }
 
@@ -401,7 +480,6 @@ function renderVideoLibraryList() {
             deleteBtn.className = 'delete-video-btn';
             deleteBtn.innerHTML = '×';
             deleteBtn.title = `Poista video "${videoData.title}"`;
-            // deleteBtn.dataset.videoId = videoData.id; // Ei tarvita, koska parentilla on jo
             actionsContainer.appendChild(deleteBtn);
             
             li.appendChild(actionsContainer);
@@ -413,32 +491,24 @@ function renderVideoLibraryList() {
 }
 
 function handleMoveVideo(event) {
-    const videoId = event.target.dataset.videoId;
-    const newFolderId = event.target.value;
+    const selectElement = event.target;
+    const videoId = selectElement.dataset.videoId;
+    const newFolderIdValue = selectElement.value;
 
-    if (!videoId || newFolderId === "") return; // Älä tee mitään jos "Siirrä..." on valittu
+    if (!videoId || newFolderIdValue === "") return;
 
     const video = library.videos[videoId];
     if (!video) return;
 
-    const oldFolderId = video.folderId || 'root';
-    video.folderId = (newFolderId === 'root' ? null : newFolderId);
+    video.folderId = (newFolderIdValue === 'root' ? null : newFolderIdValue);
     
     saveLibraryToLocal();
+    renderVideoLibraryList(); // Päivitä videolista, video poistuu nykyisestä kansiosta jos se siirrettiin
     
-    // Jos video siirrettiin pois nykyisestä aktiivisesta kansiosta,
-    // tai nykyiseen aktiiviseen kansioon, päivitä vain videolista.
-    // Ei tarvitse vaihtaa kansiota, ellei käyttäjä tee sitä erikseen.
-    if (oldFolderId === currentFolderId || (newFolderId === 'root' && currentFolderId === 'root') || newFolderId === currentFolderId) {
-        renderVideoLibraryList();
-    } else {
-        // Jos video siirrettiin pois nykyisestä kansiosta, se vain katoaa listalta.
-        // Tämä on ok, koska renderVideoLibraryList suodattaa currentFolderId:n mukaan.
-        renderVideoLibraryList();
-    }
     // Palauta selectin valinta "Siirrä..." tilaan
-    event.target.value = "";
+    selectElement.value = "";
 }
+
 
 function updateActiveVideoInLibraryList(activeVideoId) {
     document.querySelectorAll('#video-library-list li').forEach(item => {
@@ -539,39 +609,51 @@ function updateCommentsHeader(videoTitle) {
 }
 
 function updateUIBasedOnState() {
-    if (currentVideoId && library.videos[currentVideoId] && player && typeof player.getPlayerState === 'function') {
+    const videoIsSelectedAndExists = currentVideoId && library.videos[currentVideoId];
+    const playerIsReadyAndExists = player && typeof player.getPlayerState === 'function';
+
+    if (videoIsSelectedAndExists && playerIsReadyAndExists) {
         commentTextInput.disabled = false;
         addCommentBtn.disabled = false;
         updateCommentsHeader(library.videos[currentVideoId].title);
-        renderCommentsList(); // Varmista että kommentit päivittyvät
+        renderCommentsList();
         playerPlaceholder.classList.add('hidden');
     } else {
         commentTextInput.disabled = true;
         addCommentBtn.disabled = true;
-        updateCommentsHeader();
+        updateCommentsHeader(); // Tyhjentää tai asettaa oletusotsikon
         commentsListUL.innerHTML = '<li style="font-style: italic; color: var(--text-secondary);">Valitse video näyttääksesi kommentit.</li>';
-        // Näytä placeholder vain jos soitinta ei ole tai se ei ole aktiivinen
-        if (!player || !player.getPlayerState || [YT.PlayerState.UNSTARTED, YT.PlayerState.ENDED, -1].includes(player.getPlayerState())) {
+        
+        // Näytä placeholder, jos soitinta ei ole, se ei ole valmis, tai videota ei ole valittu
+        if (!playerIsReadyAndExists || !videoIsSelectedAndExists) {
             playerPlaceholder.classList.remove('hidden');
+        } else if (playerIsReadyAndExists && ([YT.PlayerState.UNSTARTED, YT.PlayerState.ENDED, -1].includes(player.getPlayerState()))){
+             // Jos soitin on olemassa mutta ei toista/puskuroi aktiivisesti, näytä placeholder
+             // Tämä ehto voi olla liian aggressiivinen, jos halutaan että viimeisin frame jää näkyviin.
+             // Poistetaan toistaiseksi tämä ehto, jotta placeholder näkyy vain jos soitin ei ole valmis TAI videota ei ole valittu.
+            // playerPlaceholder.classList.remove('hidden');
         }
     }
     updateVideoListHeader();
     updateActiveVideoInLibraryList(library.settings.activeVideoId);
-    renderFolderList(); // Varmista, että kansiolista on myös ajantasalla korostusten osalta
+    renderFolderList();
 }
+
 
 // --- LOCALSTORAGE ---
 function saveLibraryToLocal() {
     try {
+        // Varmistetaan, että tallennettavat ID:t ovat valideja
         if (library.settings.activeVideoId && !library.videos[library.settings.activeVideoId]) {
             library.settings.activeVideoId = null;
         }
         if (library.settings.lastOpenedFolderId && library.settings.lastOpenedFolderId !== 'root' && !library.folders.find(f => f.id === library.settings.lastOpenedFolderId)) {
-            library.settings.lastOpenedFolderId = 'root'; // Jos kansio poistettu
+            library.settings.lastOpenedFolderId = 'root';
         }
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(library));
     } catch (e) {
         console.error("Error saving to localStorage:", e);
+        // Tässä voisi ilmoittaa käyttäjälle, että tallennus epäonnistui
     }
 }
 
@@ -585,20 +667,21 @@ function loadLibraryFromLocal() {
         const storedLibrary = localStorage.getItem(LOCAL_STORAGE_KEY);
         const parsed = storedLibrary ? JSON.parse(storedLibrary) : null;
         if (parsed) {
-            library = { // Yhdistä oletusarvoihin varmistaaksesi kaikkien avainten olemassaolon
-                folders: parsed.folders || [],
-                videos: parsed.videos || {},
+            library = {
+                folders: Array.isArray(parsed.folders) ? parsed.folders : [],
+                videos: typeof parsed.videos === 'object' && parsed.videos !== null ? parsed.videos : {},
                 settings: {
                     lastOpenedFolderId: parsed.settings?.lastOpenedFolderId || 'root',
                     activeVideoId: parsed.settings?.activeVideoId || null
                 }
             };
-            // Varmista, että settings.activeVideoId on validi
+            
             if (library.settings.activeVideoId && !library.videos[library.settings.activeVideoId]) {
+                console.warn(`Active video ID ${library.settings.activeVideoId} not found in loaded videos. Resetting.`);
                 library.settings.activeVideoId = null;
             }
-            // Varmista, että settings.lastOpenedFolderId on validi
             if (library.settings.lastOpenedFolderId !== 'root' && !library.folders.find(f => f.id === library.settings.lastOpenedFolderId)) {
+                console.warn(`Last opened folder ID ${library.settings.lastOpenedFolderId} not found. Resetting to root.`);
                 library.settings.lastOpenedFolderId = 'root';
             }
 
@@ -606,8 +689,8 @@ function loadLibraryFromLocal() {
             library = defaultLibrary;
         }
     } catch (e) {
-        console.error("Error loading from localStorage:", e);
+        console.error("Error loading or parsing from localStorage:", e);
         library = defaultLibrary;
     }
-    currentFolderId = library.settings.lastOpenedFolderId || 'root'; // Varmista asetus
+    currentFolderId = library.settings.lastOpenedFolderId || 'root';
 }
